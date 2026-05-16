@@ -1,80 +1,131 @@
 import { spawn } from "child_process";
 import fs from "fs";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
 
-// export const askAI = (req, res) => {
-//   console.log(req.body)
-//   const userText = req.body.text;
+const pdfParse = require("pdf-parse");
 
+export const askAI = async (req, res) => {
 
-//   if (!userText) {
-//     return res.status(400).json({
-//       success: false,
-//       message: "Text is required",
-//     }); 
-//   }
+    try {
 
-//   // Python process run karo
-//   const pythonProcess = spawn("python", [
-//     "python/LegalSahayk/run_agent.py",
-//     userText,
-//   ]);
+        const userText = req.body.text;
 
-//   let errorData = "";
+        if (!userText) {
+            return res.status(400).json({
+                success: false,
+                message: "Question is required"
+            });
+        }
 
-//   pythonProcess.stderr.on("data", (data) => {
-//     errorData += data.toString();
-//   });
+        // ==================================
+        // PDF EXISTS
+        // ==================================
 
-//   pythonProcess.on("close", () => {
-//     if (errorData) {
-//       return res.status(500).json({
-//         success: false,
-//         error: errorData,
-//       });
-//     }
+        if (req.file) {
 
-//     // result.txt read karo
-//     try {
-//       const result = fs.readFileSync(
-//         "python/LegalSahayk/result.txt",
-//         "utf-8"
-//       );
+            console.log("PDF Uploaded");
 
-//       res.json({
-//         success: true,
-//         answer: result,
-//       });
-//     } catch (err) {
-//       res.status(500).json({
-//         success: false,
-//         message: "Error reading result file",
-//       });
-//     }
-//   });
-// };
+            // uploaded file path
+            const filePath = req.file.path;
 
+            // read pdf
+            const dataBuffer = fs.readFileSync(filePath);
 
+            // extract text
+            const pdfData = await pdfParse(dataBuffer);
 
+            const extractedText = pdfData.text;
 
-// //testing 
+            // save extracted text
+            fs.writeFileSync(
+                "python/LegalSahayk/temp_contract.txt",
+                extractedText
+            );
 
-export const askAI = (req, res) => {
+            console.log("PDF text extracted and saved");
 
-  console.log(req.body);
+            // ==================================
+            // RUN INGESTION
+            // ==================================
 
-  const userText = req.body.text;
+            await new Promise((resolve, reject) => {
 
-  if (!userText) {
-    return res.status(400).json({
-      success: false,
-      message: "Text is required",
-    });
-  }
+                const ingestProcess = spawn("python", [
+                    "python/LegalSahayk/ingestion.py"
+                ]);
 
-  // DUMMY RESPONSE
-  return res.json({
-    success: true,
-    answer: `You asked: ${userText}`,
-  });
+                let ingestError = "";
+
+                ingestProcess.stderr.on("data", (data) => {
+                    ingestError += data.toString();
+                });
+
+                ingestProcess.on("close", (code) => {
+
+                    if (code !== 0) {
+                        reject(ingestError);
+                    } else {
+                        resolve();
+                    }
+
+                });
+
+            });
+
+            console.log("Contract ingestion completed");
+        }
+
+        // ==================================
+        // RUN PYTHON AGENT
+        // ==================================
+
+        const pythonProcess = spawn("python", [
+            "python/LegalSahayk/run_agent.py",
+            userText
+        ]);
+
+        let outputData = "";
+        let errorData = "";
+
+        // stdout capture
+        pythonProcess.stdout.on("data", (data) => {
+            outputData += data.toString();
+        });
+
+        // stderr capture
+        pythonProcess.stderr.on("data", (data) => {
+            errorData += data.toString();
+        });
+
+        // process complete
+        pythonProcess.on("close", (code) => {
+
+            if (code !== 0) {
+
+                return res.status(500).json({
+                    success: false,
+                    error: errorData
+                });
+
+            }
+
+            return res.json({
+                success: true,
+                answer: outputData
+            });
+
+        });
+
+    } catch (error) {
+
+        console.log(error);
+
+        return res.status(500).json({
+            success: false,
+            error: error.message
+        });
+
+    }
 
 };
