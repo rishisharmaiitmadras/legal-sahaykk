@@ -91,45 +91,51 @@ export default function App() {
     }
   }, []);
 
-  const simulateAssistantReply = useCallback(async (userText) => {
+  const simulateAssistantReply = useCallback(async (userText, file) => {
 
   try {
 
     const lower = userText.toLowerCase();
 
-    // OPTIONAL DOCUMENT PANEL LOGIC
+    // OPTIONAL DOCUMENT PANEL
     if (lower.includes('nda')) {
+
       setDocContent(DOCUMENTS.nda);
       setDocOpen(true);
+
     } else if (lower.includes('rent')) {
+
       setDocContent(DOCUMENTS.rent);
       setDocOpen(true);
+
     }
 
-    // BACKEND API CALL
+    // FORM DATA
+    const formData = new FormData();
+
+    formData.append("text", userText);
+
+    if (file) {
+      formData.append("file", file);
+    }
+
+    // BACKEND API
     const res = await fetch(
-  'http://localhost:5000/api/ai/ask',
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text: userText,
-    }),
-  }
-);
+      "http://localhost:5000/api/ai/ask",
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
 
     const data = await res.json();
 
-    
-
     // AI RESPONSE
     setMessages((prev) => [
-      ...prev, 
+      ...prev,
       {
         id: makeId(),
-        role: 'assistant',
+        role: "assistant",
         content: data.answer,
       },
     ]);
@@ -142,8 +148,8 @@ export default function App() {
       ...prev,
       {
         id: makeId(),
-        role: 'assistant',
-        content: 'Backend connection failed.',
+        role: "assistant",
+        content: "Backend connection failed.",
       },
     ]);
 
@@ -154,9 +160,8 @@ export default function App() {
   }
 
 }, []);
-
   const handleSend = useCallback(
-    (rawText) => {
+    (rawText, file) => {
       const text = rawText.trim();
       if (!text || isTyping) return;
 
@@ -164,7 +169,7 @@ export default function App() {
       resetDocIfKeywords(text);
       setIsTyping(true);
 
-      simulateAssistantReply(text);
+      simulateAssistantReply(text, file);
     },
     [isTyping, resetDocIfKeywords, simulateAssistantReply]
   );

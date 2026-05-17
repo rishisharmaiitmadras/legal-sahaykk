@@ -1,9 +1,9 @@
 import { spawn } from "child_process";
-import fs from "fs";
-import pdf from "pdf-parse/lib/pdf-parse.js";
 
 export const askAI = async (req, res) => {
+
   try {
+
     const userText = req.body.text;
 
     if (!userText) {
@@ -18,60 +18,77 @@ export const askAI = async (req, res) => {
     // ==================================
 
     if (req.file) {
+
       console.log("PDF Uploaded");
 
       // uploaded file path
       const filePath = req.file.path;
 
       // ==================================
-      // EXTRACT PDF TEXT
+      // RUN OCR EXTRACTION
       // ==================================
 
-      const dataBuffer = fs.readFileSync(filePath);
+      await new Promise((resolve, reject) => {
 
-      console.log("BUFFER READ SUCCESS");
+        const ocrProcess = spawn("python", [
+          "python/LegalSahayk/ocr_extract.py",
+          filePath,
+        ]);
 
-      const pdfData = await pdf(dataBuffer);
+        let ocrError = "";
 
-      console.log("PDF DATA:");
-      console.log(pdfData);
+        ocrProcess.stdout.on("data", (data) => {
+          console.log(data.toString());
+        });
 
-      const extractedText = pdfData.text || "";
+        ocrProcess.stderr.on("data", (data) => {
+          ocrError += data.toString();
+        });
 
-      console.log("EXTRACTED TEXT:");
-      console.log(extractedText);
+        ocrProcess.on("close", (code) => {
 
-      console.log("TEXT LENGTH:", extractedText.length);
-      // ==================================
-      // SAVE EXTRACTED TEXT
-      // ==================================
+          if (code !== 0) {
+            reject(ocrError);
+          } else {
+            resolve();
+          }
 
-      fs.writeFileSync("python/LegalSahayk/temp_contract.txt", extractedText);
+        });
 
-      console.log("PDF text extracted and saved");
+      });
+
+      console.log("OCR extraction completed");
 
       // ==================================
       // RUN INGESTION
       // ==================================
 
       await new Promise((resolve, reject) => {
+
         const ingestProcess = spawn("python", [
           "python/LegalSahayk/ingestion.py",
         ]);
 
         let ingestError = "";
 
+        ingestProcess.stdout.on("data", (data) => {
+          console.log(data.toString());
+        });
+
         ingestProcess.stderr.on("data", (data) => {
           ingestError += data.toString();
         });
 
         ingestProcess.on("close", (code) => {
+
           if (code !== 0) {
             reject(ingestError);
           } else {
             resolve();
           }
+
         });
+
       });
 
       console.log("Contract ingestion completed");
@@ -101,24 +118,32 @@ export const askAI = async (req, res) => {
 
     // process complete
     pythonProcess.on("close", (code) => {
+
       if (code !== 0) {
+
         return res.status(500).json({
           success: false,
           error: errorData,
         });
+
       }
 
       return res.json({
         success: true,
         answer: outputData,
       });
+
     });
+
   } catch (error) {
+
     console.log(error);
 
     return res.status(500).json({
       success: false,
       error: error.message,
     });
+
   }
+
 };
