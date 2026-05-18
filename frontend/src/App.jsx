@@ -136,7 +136,7 @@ export default function App() {
       {
         id: makeId(),
         role: "assistant",
-        content: data.answer,
+        content: data.answer || data.error || data.message || "No response from backend.",
       },
     ]);
 
